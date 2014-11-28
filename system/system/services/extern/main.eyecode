@@ -14,8 +14,8 @@ Copyright © 2005 - 2010 eyeos Team (team@eyeos.org)
              since 2010 Lars Knickrehm (mail@lars-sh.de)
 */
 
-define('MAX_FILE_EXTENSION', 8);
-define('MAX_FILE_NAME_LEN', 40);
+define('MAX_FILE_EXTENSION', false);
+define('MAX_FILE_NAME_LEN', false);
 
 function service_extern_init($params = null) {
 	global $externRequest;
@@ -34,30 +34,44 @@ function service_extern_getContent($params) {
 		header('Content-Disposition: attachment; filename="' . $params[2] . '"');
 	}
 	
-	// MIMETYPES
-	$mimetypes = array(
-		'css' => 'text/css; charset=utf-8',
-		'gif' => 'image/gif',
-		'html' => 'text/html; charset=utf-8',
-		'ico' => 'image/x-icon',
-		'jpg' => 'image/jpg',
-		'js' => 'text/javascript; charset=utf-8',
-		'mp3' => 'audio/mpeg3',
-		'ogg' => 'audio/ogg',
-		'png' => 'image/png',
-		'swf' => 'application/x-shockwave-flash',
-		'txt' => 'text/plain; charset=utf-8',
-		'xml' => 'text/xml; charset=utf-8'
-	);
-	
 	// HEADER
-	if (isset($params[1]) === true && isset($mimetypes[$params[1]]) === true) {
-		header('Content-Type: ' . $mimetypes[$params[1]]);
+	$params[1] = extern('getContentType', array($params[1]));
+	if ($params[1] !== false) {
+		header('Content-Type: ' . $params[1]);
 	}
 	header('Content-Length: ' . /* utf8 */ strlen($params[0]));
 	header('Accept-Ranges: bytes');
 	echo $params[0];
 	exit;
+}
+
+function service_extern_getContentType($params) {
+	$type = isset($params[0]) && is_string($params[0]) ? $params[0] : null;
+	$all = isset($params[1]) && is_bool($params[1]) ? $params[1] : false;
+	
+	if ($all === true) {
+		$config = unserialize(file_get_contents(EYE_ROOT . '/' . SYSTEM_DIR . '/' . SERVICE_DIR . '/extern/mimetypes-all.data'));
+	} else {
+		$config = unserialize(file_get_contents(EYE_ROOT . '/' . SYSTEM_DIR . '/' . SERVICE_DIR . '/extern/mimetypes.data'));
+	}
+	$type = /* utf8 */ strtolower($type);
+	if (isset($config[$type]) === true) {
+		if (($type === 'xht' || $type === 'xhtml') && /* utf8 */ stripos($_SERVER['HTTP_ACCEPT'], $config['xhtml']) === false) {
+			$type = 'html';
+		}
+		$contentType = $config[$type];
+		
+		// Charset
+		if (substr($contentType, 0, 5) === 'text/' || substr($contentType, -4) === '/xml' || substr($contentType, -4) === '+xml' || $type === 'js' || $type === 'json') { // utf8
+			$contentType .= '; charset=utf-8';
+		}
+		
+		return $contentType;
+	}
+	if ($all === true) {
+		return false;
+	}
+	return extern('getContentType', array($type, true));
 }
 
 function service_extern_getFile($params) {
@@ -89,10 +103,10 @@ function service_extern_getFile($params) {
 	$basename = $info['basename'];
 	$dirname = $info['dirname'] .  '/' . $basename;
 	$extension = $info['extension'];
-	if (utf8_strlen($basename) > MAX_FILE_NAME_LEN === true) {
+	if (MAX_FILE_NAME_LEN !== false && utf8_strlen($basename) > MAX_FILE_NAME_LEN === true) {
 		return false;
 	}
-	if (utf8_strlen($extension) > MAX_FILE_EXTENSION === true) {
+	if (MAX_FILE_EXTENSION !== false && utf8_strlen($extension) > MAX_FILE_EXTENSION === true) {
 		return false;
 	}
 	if ( /* utf8 */ strpos(realpath($dirname), realpath(EYE_ROOT . '/' . EXTERN_DIR . '/')) !== 0) {
@@ -135,38 +149,11 @@ function service_extern_getFile($params) {
 				}
 			}
 			
-			// TYPE
-			if ($extension === 'css') {
-				$type = 'css';
-			} else if ($extension === 'gif') {
-				$type = 'gif';
-			} else if($extension === 'htm' || $extension === 'html' || $extension === 'xhtml') {
-				$type = 'html';
-			} else if ($extension === 'cur' || $extension === 'ico') {
-				$type = 'ico';
-			} else if ($extension === 'jpg') {
-				$type = 'jpg';
-			} else if ($extension === 'js') {
-				$type = 'js';
-			} else if ($extension === 'mp3') {
-				$type = 'mp3';
-			} else if ($extension === 'ogg') {
-				$type = 'ogg';
-			} else if ($extension === 'png') {
-				$type = 'png';
-			} else if($extension === 'swf'){
-				$type = 'swf';
-			} else if ($extension === 'xml' || $extension === 'xsl') {
-				$type = 'xml';
-			} else {
-				$type = 'txt';
-			}
-			
 			// USERTHEME
 			$content = file_get_contents($dirname);
 			$content = str_replace('theme=USERTHEME', 'theme=' . $_SESSION['usertheme'], $content);
 		}
-		extern('getContent', array($content, $type, $download));
+		extern('getContent', array($content, $extension, $download));
 	}
 	return true;
 }
